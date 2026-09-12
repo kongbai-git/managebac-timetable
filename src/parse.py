@@ -312,6 +312,27 @@ def _dedupe(events: List[Dict]) -> List[Dict]:
     return out
 
 
+def _is_non_class(summary: str) -> bool:
+    """True for break/lunch blocks that should never become calendar events."""
+    s = (summary or "").strip().lower()
+    return s == "break" or "lunch" in s or "recess" in s
+
+
+def _apply_class_filter(events: List[Dict], include: List[str], exclude: List[str]) -> List[Dict]:
+    """Filter events by class-name whitelist/blacklist (substring, case-insensitive)."""
+    if not include and not exclude:
+        return events
+    out = []
+    for ev in events:
+        s = (ev.get("summary") or "").lower()
+        if include and not any(i.lower() in s for i in include):
+            continue
+        if exclude and any(e.lower() in s for e in exclude):
+            continue
+        out.append(ev)
+    return out
+
+
 def extract_events(raw: Dict, cfg) -> List[Dict]:
     """Top-level extractor for browser mode."""
     from . import config as cfgmod
@@ -332,6 +353,10 @@ def extract_events(raw: Dict, cfg) -> List[Dict]:
         else:
             # merge, dedupe again
             events = _dedupe(events + json_events)
+
+    # Drop non-class blocks (lunch/break/recess) and apply class-name filters.
+    events = [e for e in events if not _is_non_class(e.get("summary") or "")]
+    events = _apply_class_filter(events, cfg.class_include, cfg.class_exclude)
 
     if not events:
         raise RuntimeError(

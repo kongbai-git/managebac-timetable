@@ -45,6 +45,12 @@ jobs:
           MANAGEBAC_WEEKS_AHEAD: ${{ vars.MANAGEBAC_WEEKS_AHEAD || '4' }}
           MANAGEBAC_TZ: ${{ vars.MANAGEBAC_TZ || 'Asia/Shanghai' }}
           ICS_CALNAME: ${{ vars.ICS_CALNAME || 'ManageBac Timetable' }}
+          CLASS_EXCLUDE: ${{ vars.CLASS_EXCLUDE }}
+          CLASS_INCLUDE: ${{ vars.CLASS_INCLUDE }}
+          CYCLE_LENGTH: ${{ vars.CYCLE_LENGTH || '2' }}
+          CYCLE_NAMES: ${{ vars.CYCLE_NAMES || 'A,B' }}
+          CYCLE_ANCHOR_DATE: ${{ vars.CYCLE_ANCHOR_DATE || '2026-09-14' }}
+          DEBUG: ${{ vars.DEBUG || '0' }}
           MANAGEBAC_ICAL_URL: ${{ secrets.MANAGEBAC_ICAL_URL }}
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           NOTIFY_SERVERCHAN_SENDKEY: ${{ secrets.NOTIFY_SERVERCHAN_SENDKEY }}
@@ -52,6 +58,14 @@ jobs:
           NOTIFY_WECHAT_WEBHOOK: ${{ secrets.NOTIFY_WECHAT_WEBHOOK }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
         run: python main.py
+
+      - name: Upload debug dumps
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managebac-debug
+          path: debug/
+          if-no-files-found: ignore
 
       - name: Deploy to GitHub Pages (gh-pages branch)
         if: success()

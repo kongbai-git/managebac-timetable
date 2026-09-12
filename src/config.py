@@ -9,7 +9,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 
 def _load_dotenv(path: str = ".env") -> None:
@@ -32,6 +32,13 @@ def env(key: str, default: Optional[str] = None) -> Optional[str]:
     return os.environ.get(key, default)
 
 
+def _split_list(value: Optional[str]) -> List[str]:
+    """Split a comma-separated env value into a clean list of substrings."""
+    if not value:
+        return []
+    return [x.strip() for x in value.split(",") if x.strip()]
+
+
 @dataclass
 class Config:
     base_url: str
@@ -47,6 +54,14 @@ class Config:
     out_dir: str
     periods_file: str
     debug: bool
+
+    # Class filtering (optional, comma-separated substrings)
+    class_include: List[str]
+    class_exclude: List[str]
+    # Rotation cycle (e.g. Week A/B); cycle_length=1 means no rotation
+    cycle_length: int
+    cycle_names: List[str]
+    cycle_anchor: Optional[str]
 
     # Source mode: "ical_feed" or "browser"
     ical_url: Optional[str]
@@ -81,6 +96,11 @@ def load_config() -> Config:
         out_dir=env("ICS_OUT_DIR") or "dist",
         periods_file=env("PERIODS_FILE") or "periods.json",
         debug=(env("DEBUG") or "0") == "1",
+        class_include=_split_list(env("CLASS_INCLUDE")),
+        class_exclude=_split_list(env("CLASS_EXCLUDE")),
+        cycle_length=int(env("CYCLE_LENGTH") or "1"),
+        cycle_names=_split_list(env("CYCLE_NAMES")) or ["A", "B"],
+        cycle_anchor=env("CYCLE_ANCHOR_DATE"),
         ical_url=env("MANAGEBAC_ICAL_URL"),
         notify_serverchan_sendkey=env("NOTIFY_SERVERCHAN_SENDKEY"),
         notify_pushplus_token=env("NOTIFY_PUSHPLUS_TOKEN"),
