@@ -17,10 +17,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List
 from urllib import request
+from urllib.parse import urljoin
 
 log = logging.getLogger("fetch")
 
@@ -86,7 +86,7 @@ def _login(page, cfg) -> None:
     log.info("Logged in successfully as user (redacted).")
 
 
-def _go_next_week(page) -> bool:
+def _go_next_week(page, base_url: str) -> bool:
     """Navigate to the next week using ManageBac's own 'Next' link."""
     link = page.locator("a[href*='direction=future']").first
     if link.count() == 0:
@@ -94,7 +94,8 @@ def _go_next_week(page) -> bool:
     href = link.get_attribute("href")
     if not href:
         return False
-    page.goto(href, wait_until="domcontentloaded", timeout=60000)
+    full = urljoin(base_url, href)  # resolve relative href to absolute URL
+    page.goto(full, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(2500)
     return True
 
@@ -135,7 +136,7 @@ def fetch_browser(cfg) -> Dict:
                     _dump(cfg, f"week_{k}.html", html)
                 log.info("Captured week %d (%s)", k, page.url)
                 if k < cfg.weeks_ahead - 1:
-                    if not _go_next_week(page):
+                    if not _go_next_week(page, cfg.base_url):
                         log.warning("Could not advance to next week; stopping after %d week(s).", k + 1)
                         break
         finally:
