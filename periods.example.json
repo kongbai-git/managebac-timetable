@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy this file to periods.json and replace the times with YOUR school's real bell schedule. Each ManageBac period name maps to its start/end clock time (24h HH:MM). The times below are PLACEHOLDERS — do not use them as-is.",
+  "Period 0": {"start": "07:40", "end": "08:20"},
+  "Period 1": {"start": "08:25", "end": "09:05"},
+  "Period 2": {"start": "09:10", "end": "09:50"},
+  "Break": {"start": "09:50", "end": "10:10"},
+  "Period 3": {"start": "10:10", "end": "10:50"},
+  "Period 4": {"start": "10:55", "end": "11:35"},
+  "Period 5": {"start": "11:40", "end": "12:20"},
+  "Lunch": {"start": "12:20", "end": "13:10"},
+  "Period 6": {"start": "13:10", "end": "13:50"},
+  "Period 7": {"start": "13:55", "end": "14:35"},
+  "Period 8": {"start": "14:40", "end": "15:20"}
+}

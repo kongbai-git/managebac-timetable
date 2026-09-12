@@ -1,0 +1,3 @@
+# Normalize line endings across OSes; keep .ics as CRLF (RFC 5545 requires CRLF)
+* text=auto
+*.ics text eol=crlf

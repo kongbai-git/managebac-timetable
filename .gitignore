@@ -1,0 +1,15 @@
+# Secrets / local config — never commit these
+.env
+*.session
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Debug dumps (may contain private timetable data)
+debug/
+dump/
+
+# Generated output
+dist/
+managebac_timetable.ics
