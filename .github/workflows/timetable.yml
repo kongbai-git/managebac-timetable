@@ -41,7 +41,7 @@ jobs:
           MANAGEBAC_BASE_URL: ${{ vars.MANAGEBAC_BASE_URL || 'https://ycishk.managebac.com' }}
           MANAGEBAC_USERNAME: ${{ secrets.MANAGEBAC_USERNAME }}
           MANAGEBAC_PASSWORD: ${{ secrets.MANAGEBAC_PASSWORD }}
-          MANAGEBAC_TIMETABLE_PATH: ${{ vars.MANAGEBAC_TIMETABLE_PATH || '/student/timetable' }}
+          MANAGEBAC_TIMETABLE_PATH: ${{ vars.MANAGEBAC_TIMETABLE_PATH || '/student/timetables' }}
           MANAGEBAC_WEEKS_AHEAD: ${{ vars.MANAGEBAC_WEEKS_AHEAD || '4' }}
           MANAGEBAC_TZ: ${{ vars.MANAGEBAC_TZ || 'Asia/Shanghai' }}
           ICS_CALNAME: ${{ vars.ICS_CALNAME || 'ManageBac Timetable' }}

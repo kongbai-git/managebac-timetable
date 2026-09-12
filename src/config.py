@@ -88,7 +88,7 @@ def load_config() -> Config:
         password=env("MANAGEBAC_PASSWORD"),
         tz=env("MANAGEBAC_TZ") or "Asia/Shanghai",
         login_url=base_url + (env("MANAGEBAC_LOGIN_PATH") or "/login"),
-        timetable_url=base_url + (env("MANAGEBAC_TIMETABLE_PATH") or "/student/timetable"),
+        timetable_url=base_url + (env("MANAGEBAC_TIMETABLE_PATH") or "/student/timetables"),
         weeks_ahead=int(env("MANAGEBAC_WEEKS_AHEAD") or "4"),
         calname=env("ICS_CALNAME") or "ManageBac Timetable",
         ics_filename=env("ICS_FILENAME") or "managebac_timetable.ics",
