@@ -13,6 +13,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from html import unescape
 from typing import Dict, List
 
 log = logging.getLogger("parse")
@@ -122,97 +123,133 @@ def _build_event(date_str: str, period_times: Dict, summary: str,
     }
 
 
+MONTHS = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+          "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+
+
+def _parse_date_header(text: str, year: int):
+    """'Sep 7, Mon Rotation Day 6' -> '2026-09-07'."""
+    m = re.search(r"([A-Za-z]{3})\s+(\d{1,2})", text)
+    if not m:
+        return None
+    mon = MONTHS.get(m.group(1).lower())
+    if not mon:
+        return None
+    return f"{year}-{mon:02d}-{int(m.group(2)):02d}"
+
+
+def _parse_time_range(text: str):
+    """'8:10 AM - 9:10 AM' -> ('08:10:00', '09:10:00')."""
+    m = re.search(
+        r"(\d{1,2}):(\d{2})\s*(AM|PM)\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)",
+        text, re.IGNORECASE,
+    )
+    if not m:
+        return None
+
+    def to24(h, mi, ap):
+        h = int(h)
+        ap = ap.upper()
+        if ap == "PM" and h != 12:
+            h += 12
+        elif ap == "AM" and h == 12:
+            h = 0
+        return f"{h:02d}:{mi}:00"
+
+    return (to24(m.group(1), m.group(2), m.group(3)),
+            to24(m.group(4), m.group(5), m.group(6)))
+
+
+def _strip_tags(text: str) -> str:
+    return unescape(" ".join(re.sub(r"<[^>]+>", " ", text).split()))
+
+
+def _parse_block(block_html: str, date_str: str, period_name: str, periods) -> Dict:
+    """Parse one a.f-timetable-item block (HTML string) into an event dict."""
+    name_m = re.search(r"<(?:p|h6)[^>]*fw-semibold[^>]*>(.*?)</(?:p|h6)>", block_html, re.S)
+    if not name_m:
+        return None
+    summary = _strip_tags(name_m.group(1))
+    if not summary or _is_non_class(summary):
+        return None
+
+    teacher = ""
+    location = ""
+    for m in re.finditer(r"<p([^>]*)>(.*?)</p>", block_html, re.S):
+        attrs = m.group(1)
+        txt = _strip_tags(m.group(2))
+        if "fw-semibold" in attrs:
+            continue  # course name, already captured
+        if "mt-1" in attrs or txt.startswith("Year "):
+            continue  # year-group line
+        if "text-truncate" in attrs:
+            teacher = txt
+        else:
+            location = txt
+
+    if "|" in teacher:
+        teacher = teacher.split("|")[0].strip()  # "Full Name | Preferred" -> keep full name
+
+    time_m = re.search(r"<small[^>]*>(.*?)</small>", block_html, re.S)
+    time_range = _parse_time_range(_strip_tags(time_m.group(1))) if time_m else None
+    if time_range:
+        start, end = time_range
+    else:
+        pt = _match_period(period_name, periods)
+        if not pt:
+            return None
+        start, end = pt["start"], pt["end"]
+
+    return {
+        "date": date_str,
+        "start": start,
+        "end": end,
+        "summary": summary,
+        "teacher": teacher,
+        "location": location,
+        "description": "",
+        "all_day": False,
+    }
+
+
 def extract_from_html(html: str, periods: Dict[str, Dict[str, str]]) -> List[Dict]:
-    """Best-effort extraction of dated class blocks from timetable HTML.
+    """Parse ManageBac's server-rendered timetable table (stdlib only).
 
-    NOTE: ManageBac renders the timetable as a period x date grid. The exact
-    DOM varies by school/template, so this parser is deliberately generic and
-    may need selector tuning against a real DEBUG dump. See README.md.
+    The table has a thead with one <th> per weekday (e.g. "Sep 7, Mon Rotation
+    Day 6") and tbody rows where the row's <th> is the period name and each
+    <td> holds zero or more class blocks (a.f-timetable-item). A class block
+    carries the time, course name, teacher and room directly.
     """
-    try:
-        from bs4 import BeautifulSoup
-    except ImportError:
-        log.warning("beautifulsoup4 not installed; skipping HTML extraction.")
-        return []
+    ym = re.search(r"start_date=(\d{4})-\d{2}-\d{2}", html)
+    year = int(ym.group(1)) if ym else datetime.now().year
 
-    soup = BeautifulSoup(html, "html.parser")
+    headers: List[str] = []
+    thead = re.search(r"<thead.*?</thead>", html, re.S)
+    if thead:
+        for i, th in enumerate(re.findall(r"<th[^>]*>(.*?)</th>", thead.group(0), re.S)):
+            if i == 0:
+                headers.append("")  # "Period" corner cell
+                continue
+            headers.append(_parse_date_header(_strip_tags(th), year) or "")
+
+    tbody = re.search(r"<tbody.*?</tbody>", html, re.S)
     events: List[Dict] = []
+    if not tbody:
+        return events
 
-    # 1) Find all date headings (cells/headers whose text or data-* hold a date).
-    date_cells = {}
-    date_re = re.compile(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b")
-    for el in soup.find_all(["th", "td", "div", "span"]):
-        txt = " ".join(el.get_text(" ", strip=True).split())
-        if not txt:
-            continue
-        m = date_re.search(txt)
-        if m:
-            try:
-                iso = f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
-            except ValueError:
-                continue
-            # record the position so we can associate blocks by column index
-            date_cells[id(el)] = iso
-
-    # 2) Find class blocks via a set of common selectors.
-    block_selectors = [
-        "[data-class-id]", "[data-course]", "[data-event]",
-        ".timetable-event", ".lesson", ".class-block", ".event-block",
-        ".fc-event", "[class*='timetable'] [class*='block']",
-        "[class*='period'][class*='item']",
-    ]
-    seen = set()
-    for sel in block_selectors:
-        try:
-            els = soup.select(sel)
-        except Exception:  # noqa: BLE001
-            continue
-        for el in els:
-            if id(el) in seen:
-                continue
-            seen.add(id(el))
-            text = " ".join(el.get_text(" ", strip=True).split())
-            if not text:
-                continue
-            # Try data-* attributes first (most reliable when present)
-            date_str = (el.get("data-date") or el.get("data-day") or "")
-            period_name = (el.get("data-period") or el.get("data-period-name") or "")
-            summary = (el.get("data-course") or el.get("data-class")
-                       or el.get("data-title") or el.get("title") or "")
-            location = (el.get("data-location") or el.get("data-room") or "")
-            teacher = (el.get("data-teacher") or "")
-
-            if not date_str or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
-                # fall back to nearest date heading (same column) — heuristic
-                date_str = _nearest_date(el, date_cells)
-            if not summary:
-                summary = text
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", tbody.group(0), re.S):
+        th_m = re.search(r"<th[^>]*>(.*?)</th>", tr, re.S)
+        period_name = _strip_tags(th_m.group(1)) if th_m else ""
+        for j, td in enumerate(re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)):
+            date_str = headers[j + 1] if j + 1 < len(headers) else ""
             if not date_str:
                 continue
+            for block in re.findall(r"<a[^>]*f-timetable-item[^>]*>.*?</a>", td, re.S):
+                ev = _parse_block(block, date_str, period_name, periods)
+                if ev:
+                    events.append(ev)
 
-            pt = _match_period(period_name, periods) if period_name else None
-            if pt is None and period_name:
-                log.warning("Period not found in periods.json: %r", period_name)
-            if pt is None:
-                # Without a period time we cannot place the event on the clock.
-                continue
-
-            events.append(_build_event(date_str, pt, summary, teacher, location))
-
-    # dedupe by stable key
     return _dedupe(events)
-
-
-def _nearest_date(el, date_cells) -> str:
-    # Simple heuristic: walk up/around for an element we already tagged as a date.
-    node = el
-    for _ in range(6):
-        if id(node) in date_cells:
-            return date_cells[id(node)]
-        node = node.parent
-        if node is None:
-            break
-    return ""
 
 
 def extract_from_json(payloads: List[Dict], periods: Dict[str, Dict[str, str]]) -> List[Dict]:
@@ -343,16 +380,6 @@ def extract_events(raw: Dict, cfg) -> List[Dict]:
     for week in raw.get("weeks", []):
         html = week.get("html", "")
         events.extend(extract_from_html(html, periods))
-
-    json_events = extract_from_json(raw.get("json", []), periods)
-    if json_events:
-        log.info("Extracted %d events from captured JSON.", len(json_events))
-        # JSON events usually have explicit times — prefer them over HTML guesses.
-        if not events:
-            events = json_events
-        else:
-            # merge, dedupe again
-            events = _dedupe(events + json_events)
 
     # Drop non-class blocks (lunch/break/recess) and apply class-name filters.
     events = [e for e in events if not _is_non_class(e.get("summary") or "")]

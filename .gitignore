@@ -9,6 +9,7 @@ venv/
 # Debug dumps (may contain private timetable data)
 debug/
 dump/
+debug-dump/
 
 # Generated output
 dist/

@@ -86,22 +86,17 @@ def _login(page, cfg) -> None:
     log.info("Logged in successfully as user (redacted).")
 
 
-def _monday_of_week(week_index: int) -> str:
-    today = date.today()
-    monday = today - timedelta(days=today.weekday())
-    return (monday + timedelta(weeks=week_index)).isoformat()
-
-
-def _load_week(page, cfg, week_index: int) -> Dict:
-    if week_index == 0:
-        page.goto(cfg.timetable_url, wait_until="domcontentloaded", timeout=60000)
-    else:
-        # Best-effort: many ManageBac timetable URLs accept ?date=YYYY-MM-DD
-        sep = "&" if "?" in cfg.timetable_url else "?"
-        url = f"{cfg.timetable_url}{sep}date={_monday_of_week(week_index)}"
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+def _go_next_week(page) -> bool:
+    """Navigate to the next week using ManageBac's own 'Next' link."""
+    link = page.locator("a[href*='direction=future']").first
+    if link.count() == 0:
+        return False
+    href = link.get_attribute("href")
+    if not href:
+        return False
+    page.goto(href, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(2500)
-    return {"week": week_index, "url": page.url, "html": page.content()}
+    return True
 
 
 def fetch_browser(cfg) -> Dict:
@@ -131,12 +126,18 @@ def fetch_browser(cfg) -> Dict:
 
         try:
             _login(page, cfg)
+            page.goto(cfg.timetable_url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(2500)
             for k in range(max(1, cfg.weeks_ahead)):
-                week = _load_week(page, cfg, k)
-                weeks.append(week)
+                html = page.content()
+                weeks.append({"week": k, "url": page.url, "html": html})
                 if cfg.debug:
-                    _dump(cfg, f"week_{k}.html", week["html"])
-                log.info("Captured week %d (%s)", k, week["url"])
+                    _dump(cfg, f"week_{k}.html", html)
+                log.info("Captured week %d (%s)", k, page.url)
+                if k < cfg.weeks_ahead - 1:
+                    if not _go_next_week(page):
+                        log.warning("Could not advance to next week; stopping after %d week(s).", k + 1)
+                        break
         finally:
             if cfg.debug:
                 try:
